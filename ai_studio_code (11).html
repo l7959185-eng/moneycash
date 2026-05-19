@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Income App</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        :root { --primary: #4f46e5; --bg: #f8fafc; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); }
+        .header { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; padding: 30px 20px; text-align: center; border-radius: 0 0 20px 20px; }
+        .balance-card { background: white; margin: -25px 20px 20px; padding: 20px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .container { padding: 0 20px 100px; }
+        .section { display: none; } .section.active { display: block; }
+        .package-card { background: white; padding: 15px; margin-bottom: 10px; border-radius: 12px; border-left: 5px solid var(--primary); }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; background: var(--primary); color: white; }
+        .nav-menu { position: fixed; bottom: 0; width: 100%; background: white; display: flex; padding: 10px 0; border-top: 1px solid #ddd; }
+        .nav-item { flex: 1; text-align: center; font-size: 12px; color: #666; cursor: pointer; }
+        .auth-screen { position: fixed; top:0; left:0; width:100%; height:100%; background: white; z-index: 2000; padding: 40px 20px; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen" class="auth-screen">
+        <h2>👋 স্বাগতম!</h2>
+        <input type="email" id="auth-email" placeholder="ইমেইল">
+        <input type="password" id="auth-pass" placeholder="পাসওয়ার্ড">
+        <button class="btn" onclick="handleAuth('login')">লগইন</button>
+        <button class="btn" style="background:#64748b; margin-top:10px" onclick="handleAuth('signup')">নতুন অ্যাকাউন্ট</button>
+    </div>
+
+    <div id="main-app" style="display: none;">
+        <div class="header">
+            <h1>Super Income</h1>
+            <p id="user-email"></p>
+        </div>
+
+        <div class="balance-card">
+            <h3>মোট ব্যালেন্স</h3>
+            <div style="font-size: 28px; font-weight: bold; color: #4f46e5;">৳ <span id="userBalance">0.00</span></div>
+        </div>
+
+        <div class="container">
+            <div id="home" class="section active">
+                <div class="package-card">
+                    <p>বিজ্ঞাপন দেখে ইনকাম করুন</p>
+                    <button class="btn" onclick="watchAd()">Watch Ad</button>
+                </div>
+            </div>
+
+            <div id="deposit" class="section">
+                <h3>ডিপোজিট করুন</h3>
+                <p>বিকাশ/নগদ (Personal): 01835183722</p>
+                <input type="number" id="dep-amount" placeholder="টাকার পরিমাণ">
+                <input type="text" id="dep-trx" placeholder="Transaction ID">
+                <button class="btn" onclick="submitDeposit()">সাবমিট</button>
+            </div>
+            
+            <div id="withdraw" class="section">
+                <h3>উইথড্র করুন</h3>
+                <input type="number" id="wit-amount" placeholder="টাকার পরিমাণ">
+                <input type="text" id="wit-num" placeholder="বিকাশ/নগদ নাম্বার">
+                <button class="btn" onclick="submitWithdraw()">রিকোয়েস্ট পাঠান</button>
+            </div>
+        </div>
+
+        <div class="nav-menu">
+            <div class="nav-item" onclick="showSection('home')"><i class="fa fa-home"></i><br>হোম</div>
+            <div class="nav-item" onclick="showSection('deposit')"><i class="fa fa-wallet"></i><br>ডিপোজিট</div>
+            <div class="nav-item" onclick="showSection('withdraw')"><i class="fa fa-money-bill"></i><br>উইথড্র</div>
+            <div class="nav-item" onclick="firebase.auth().signOut()"><i class="fa fa-sign-out"></i><br>আউট</div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDR1OUrXU-whRGIiyPOLHDofTfya7ZTn0k",
+            authDomain: "cash-38ff4.firebaseapp.com",
+            projectId: "cash-38ff4",
+            storageBucket: "cash-38ff4.firebasestorage.app",
+            messagingSenderId: "926717258086",
+            appId: "1:926717258086:web:bda01b0423d3a72c6e40a7"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let currentUser = null;
+        let userBal = 0;
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('auth-screen').style.display = 'none';
+                document.getElementById('main-app').style.display = 'block';
+                document.getElementById('user-email').innerText = user.email;
+                db.collection('users').doc(user.uid).onSnapshot(doc => {
+                    if(doc.exists) {
+                        userBal = doc.data().balance;
+                        document.getElementById('userBalance').innerText = userBal.toFixed(2);
+                    }
+                });
+            } else {
+                document.getElementById('auth-screen').style.display = 'block';
+                document.getElementById('main-app').style.display = 'none';
+            }
+        });
+
+        async function handleAuth(type) {
+            const email = document.getElementById('auth-email').value;
+            const pass = document.getElementById('auth-pass').value;
+            try {
+                if (type === 'signup') {
+                    const res = await auth.createUserWithEmailAndPassword(email, pass);
+                    await db.collection('users').doc(res.user.uid).set({ email, balance: 0 });
+                } else {
+                    await auth.signInWithEmailAndPassword(email, pass);
+                }
+            } catch (e) { alert(e.message); }
+        }
+
+        function showSection(id) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        async function watchAd() {
+            alert("অপেক্ষা করুন...");
+            setTimeout(async () => {
+                await db.collection('users').doc(currentUser.uid).update({ balance: firebase.firestore.FieldValue.increment(0.5) });
+                alert("০.৫০ টাকা যোগ হয়েছে!");
+            }, 2000);
+        }
+
+        async function submitDeposit() {
+            const amount = document.getElementById('dep-amount').value;
+            const trx = document.getElementById('dep-trx').value;
+            if(!amount || !trx) return alert("সব তথ্য দিন");
+            await db.collection('deposits').add({ uid: currentUser.uid, email: currentUser.email, amount: parseFloat(amount), trx, status: 'pending' });
+            alert("অনুরোধ পাঠানো হয়েছে!");
+        }
+
+        async function submitWithdraw() {
+            const amount = parseFloat(document.getElementById('wit-amount').value);
+            const number = document.getElementById('wit-num').value;
+            if(userBal < amount) return alert("ব্যালেন্স নেই");
+            await db.collection('users').doc(currentUser.uid).update({ balance: firebase.firestore.FieldValue.increment(-amount) });
+            await db.collection('withdrawals').add({ uid: currentUser.uid, email: currentUser.email, amount, number, status: 'pending' });
+            alert("উইথড্র রিকোয়েস্ট পাঠানো হয়েছে!");
+        }
+    </script>
+</body>
+</html>
